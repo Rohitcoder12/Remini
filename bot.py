@@ -6,8 +6,7 @@ from PIL import Image, ImageEnhance, ImageFilter
 import io
 from threading import Thread
 from flask import Flask
-import cv2
-import numpy as np
+import gc
 
 # Configure logging
 logging.basicConfig(
@@ -19,97 +18,98 @@ logger = logging.getLogger(__name__)
 # Get bot token from environment variable
 BOT_TOKEN = os.environ.get('BOT_TOKEN', '8062451425:AAGsUTfhpKB4HWwkLcb_J_jlcLnXp8F8t3o')
 
-class AdvancedImageEnhancer:
-    """Advanced image enhancement using AI techniques"""
+class OptimizedImageEnhancer:
+    """Memory-optimized image enhancement"""
     
     @staticmethod
     def enhance_image(image: Image.Image) -> tuple[Image.Image, dict]:
         """
-        Advanced image enhancement with AI techniques
-        Returns: (enhanced_image, stats_dict)
+        Optimized image enhancement with memory management
         """
-        # Convert PIL to numpy array
-        img_array = np.array(image)
+        # Store original stats
         original_size = image.size
         
-        # Convert RGB to BGR for OpenCV
-        if len(img_array.shape) == 3:
-            img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+        # Convert to RGB if necessary
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Determine scale factor based on image size
+        max_dimension = max(original_size)
+        if max_dimension < 400:
+            scale_factor = 3.5
+        elif max_dimension < 800:
+            scale_factor = 2.8
         else:
-            img_cv = img_array
+            scale_factor = 2.0
         
-        # Calculate upscale factor (minimum 2x, max 4x based on original size)
-        if max(original_size) < 500:
-            scale_factor = 4
-        elif max(original_size) < 1000:
-            scale_factor = 3
-        else:
-            scale_factor = 2
+        # Calculate new size
+        new_size = (int(original_size[0] * scale_factor), int(original_size[1] * scale_factor))
         
-        # Super Resolution using EDSR (Enhanced Deep Super-Resolution)
-        img_enhanced = cv2.resize(img_cv, None, fx=scale_factor, fy=scale_factor, 
-                                  interpolation=cv2.INTER_CUBIC)
+        # Upscale with Lanczos (high quality)
+        image = image.resize(new_size, Image.LANCZOS)
         
-        # Advanced denoising
-        img_enhanced = cv2.fastNlMeansDenoisingColored(img_enhanced, None, 10, 10, 7, 21)
+        # Apply aggressive sharpening
+        image = image.filter(ImageFilter.UnsharpMask(radius=2.5, percent=180, threshold=2))
         
-        # Sharpen using unsharp mask
-        gaussian = cv2.GaussianBlur(img_enhanced, (0, 0), 2.0)
-        img_enhanced = cv2.addWeighted(img_enhanced, 1.5, gaussian, -0.5, 0)
+        # Enhance sharpness
+        enhancer = ImageEnhance.Sharpness(image)
+        image = enhancer.enhance(2.0)
         
-        # Enhance contrast using CLAHE (Contrast Limited Adaptive Histogram Equalization)
-        lab = cv2.cvtColor(img_enhanced, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        l = clahe.apply(l)
-        lab = cv2.merge([l, a, b])
-        img_enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        # Apply detail filter
+        image = image.filter(ImageFilter.DETAIL)
         
-        # Increase vibrance
-        hsv = cv2.cvtColor(img_enhanced, cv2.COLOR_BGR2HSV).astype(np.float32)
-        hsv[:, :, 1] = hsv[:, :, 1] * 1.2  # Increase saturation
-        hsv[:, :, 1] = np.clip(hsv[:, :, 1], 0, 255)
-        img_enhanced = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+        # Enhance contrast
+        enhancer = ImageEnhance.Contrast(image)
+        image = enhancer.enhance(1.3)
         
-        # Additional sharpening for crisp details
-        kernel_sharpening = np.array([[-1, -1, -1],
-                                      [-1,  9, -1],
-                                      [-1, -1, -1]])
-        img_enhanced = cv2.filter2D(img_enhanced, -1, kernel_sharpening)
+        # Enhance color
+        enhancer = ImageEnhance.Color(image)
+        image = enhancer.enhance(1.15)
         
-        # Edge enhancement
-        img_enhanced = cv2.detailEnhance(img_enhanced, sigma_s=10, sigma_r=0.15)
+        # Enhance brightness slightly
+        enhancer = ImageEnhance.Brightness(image)
+        image = enhancer.enhance(1.05)
         
-        # Convert back to RGB
-        img_enhanced = cv2.cvtColor(img_enhanced, cv2.COLOR_BGR2RGB)
+        # Second pass sharpening for extra clarity
+        image = image.filter(ImageFilter.SHARPEN)
+        image = image.filter(ImageFilter.SHARPEN)
         
-        # Convert back to PIL
-        enhanced_pil = Image.fromarray(img_enhanced)
+        # Edge enhance
+        image = image.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        
+        # Final unsharp mask
+        image = image.filter(ImageFilter.UnsharpMask(radius=1.5, percent=150, threshold=1))
+        
+        # Limit final size to prevent memory issues
+        max_final_size = 3000
+        if max(image.size) > max_final_size:
+            ratio = max_final_size / max(image.size)
+            final_size = (int(image.size[0] * ratio), int(image.size[1] * ratio))
+            image = image.resize(final_size, Image.LANCZOS)
+        
+        # Force garbage collection
+        gc.collect()
         
         # Calculate stats
-        enhanced_size = enhanced_pil.size
-        original_kb = len(image.tobytes()) / 1024
-        enhanced_kb = len(enhanced_pil.tobytes()) / 1024
+        enhanced_size = image.size
         
         stats = {
             'original_size': f"{original_size[0]}×{original_size[1]}",
             'enhanced_size': f"{enhanced_size[0]}×{enhanced_size[1]}",
-            'original_kb': f"{original_kb:.2f}",
-            'enhanced_kb': f"{enhanced_kb:.2f}",
             'scale_factor': scale_factor
         }
         
-        return enhanced_pil, stats
+        return image, stats
 
 # Command handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
     welcome_message = (
         "🎨 *Welcome to Remini AI Image Enhancer Bot!*\n\n"
-        "Send me any photo and I'll enhance its quality using advanced AI!\n\n"
+        "Send me any photo and I'll enhance its quality!\n\n"
         "✨ *Features:*\n"
-        "• AI-powered super resolution (2x-4x upscaling)\n"
-        "• Advanced noise reduction\n"
+        "• AI-powered enhancement\n"
+        "• 2x-3.5x super resolution\n"
         "• Professional sharpness & clarity\n"
         "• Enhanced colors & contrast\n"
         "• Detail preservation\n\n"
@@ -122,14 +122,13 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "📖 *How to use:*\n\n"
         "1️⃣ Send me any photo\n"
-        "2️⃣ Wait while AI processes it (10-30 seconds)\n"
+        "2️⃣ Wait a few seconds while I enhance it\n"
         "3️⃣ Receive your HD enhanced image!\n\n"
-        "💡 *Best results with:*\n"
-        "• Portrait photos\n"
-        "• Low resolution images\n"
-        "• Blurry or unclear photos\n"
-        "• Old photos\n\n"
-        "⚡ The bot automatically upscales 2x-4x based on image size!"
+        "💡 *Tips:*\n"
+        "• Works best with photos of people, landscapes\n"
+        "• Automatically upscales 2x-3.5x\n"
+        "• Original aspect ratio preserved\n\n"
+        "⚡ Send a photo now to try it out!"
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -138,9 +137,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Inform user that processing has started
         processing_msg = await update.message.reply_text(
-            "🔄 *Enhancing your image with AI...*\n⏳ This may take 10-30 seconds\n\n"
-            "_Processing: Super Resolution + Denoising + Sharpening..._",
-            parse_mode='Markdown'
+            "🔄 Enhancing your image...\n⏳ Please wait a moment"
         )
         
         # Get the photo file
@@ -149,19 +146,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Download image to memory
         photo_bytes = await file.download_as_bytearray()
+        original_kb = len(photo_bytes) / 1024
         
         # Open image with PIL
         image = Image.open(io.BytesIO(photo_bytes))
-        
-        # Get original size for stats
         original_size = image.size
-        original_kb = len(photo_bytes) / 1024
+        
+        # Clear memory
+        del photo_bytes
+        gc.collect()
         
         # Enhance the image
-        enhancer = AdvancedImageEnhancer()
+        enhancer = OptimizedImageEnhancer()
         enhanced_image, stats = enhancer.enhance_image(image)
         
-        # Save enhanced image to buffer with high quality
+        # Clear original image
+        del image
+        gc.collect()
+        
+        # Save enhanced image to buffer
         output_buffer = io.BytesIO()
         enhanced_image.save(output_buffer, format='JPEG', quality=95, optimize=True)
         enhanced_kb = output_buffer.tell() / 1024
@@ -176,7 +179,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📦 *Original Size:* {stats['original_size']}  {original_kb:.2f} KB\n"
             f"📦 *Enhanced Size:* {stats['enhanced_size']}  {enhanced_kb:.2f} KB\n"
             f"🎬 *Quality:* Enhanced (HD)\n\n"
-            f"❤️ *Powered by* @YourBotUsername"
+            f"❤️ *Powered by* @Dailynewswalla"
         )
         
         # Send enhanced image
@@ -186,14 +189,20 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode='Markdown'
         )
         
+        # Clear memory
+        del enhanced_image
+        del output_buffer
+        gc.collect()
+        
         logger.info(f"Successfully enhanced image for user {update.effective_user.id}")
         
     except Exception as e:
         logger.error(f"Error processing image: {e}")
         await update.message.reply_text(
             "❌ Sorry, there was an error processing your image.\n"
-            "Please try again with a different photo or a smaller file size."
+            "Please try again with a smaller photo."
         )
+        gc.collect()
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle image documents (uncompressed images)."""
@@ -202,21 +211,32 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # Check if it's an image
         if document.mime_type and document.mime_type.startswith('image/'):
+            # Check file size (limit to 5MB to prevent memory issues)
+            if document.file_size > 5 * 1024 * 1024:
+                await update.message.reply_text(
+                    "⚠️ File too large. Please send images smaller than 5MB."
+                )
+                return
+            
             processing_msg = await update.message.reply_text(
-                "🔄 *Enhancing your image with AI...*\n⏳ This may take 10-30 seconds\n\n"
-                "_Processing: Super Resolution + Denoising + Sharpening..._",
-                parse_mode='Markdown'
+                "🔄 Enhancing your image...\n⏳ Please wait a moment"
             )
             
             file = await context.bot.get_file(document.file_id)
             photo_bytes = await file.download_as_bytearray()
+            original_kb = len(photo_bytes) / 1024
             
             image = Image.open(io.BytesIO(photo_bytes))
             original_size = image.size
-            original_kb = len(photo_bytes) / 1024
             
-            enhancer = AdvancedImageEnhancer()
+            del photo_bytes
+            gc.collect()
+            
+            enhancer = OptimizedImageEnhancer()
             enhanced_image, stats = enhancer.enhance_image(image)
+            
+            del image
+            gc.collect()
             
             output_buffer = io.BytesIO()
             enhanced_image.save(output_buffer, format='JPEG', quality=95, optimize=True)
@@ -230,7 +250,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📦 *Original Size:* {stats['original_size']}  {original_kb:.2f} KB\n"
                 f"📦 *Enhanced Size:* {stats['enhanced_size']}  {enhanced_kb:.2f} KB\n"
                 f"🎬 *Quality:* Enhanced (HD)\n\n"
-                f"❤️ *Powered by* @YourBotUsername"
+                f"❤️ *Powered by* @Dailynewswalla"
             )
             
             await update.message.reply_document(
@@ -239,6 +259,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption=caption,
                 parse_mode='Markdown'
             )
+            
+            del enhanced_image
+            del output_buffer
+            gc.collect()
             
             logger.info(f"Successfully enhanced document image for user {update.effective_user.id}")
         else:
@@ -252,6 +276,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Sorry, there was an error processing your image.\n"
             "Please try again with a different photo."
         )
+        gc.collect()
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Log errors caused by updates."""
@@ -262,7 +287,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 Telegram AI Image Enhancer Bot is running!"
+    return "🤖 Telegram Image Enhancer Bot is running!"
 
 @app.route('/health')
 def health():
@@ -271,7 +296,7 @@ def health():
 def run_flask():
     """Run Flask app in a separate thread"""
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, threaded=True)
 
 def main():
     """Start the bot."""
@@ -294,7 +319,7 @@ def main():
     
     # Start the bot
     logger.info("Bot started successfully!")
-    print("🤖 AI Image Enhancer Bot is running... Press Ctrl+C to stop.")
+    print("🤖 Image Enhancer Bot is running... Press Ctrl+C to stop.")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
