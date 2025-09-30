@@ -62,17 +62,15 @@ class ImageEnhancer:
             
             new_size = (new_width, new_height)
             
-            # High-quality upscaling with bicubic interpolation
-            image = image.resize(new_size, Image.BICUBIC)
+            # High-quality upscaling
+            image = image.resize(new_size, Image.LANCZOS)
             
-            # Step 1: Initial sharpening after upscale
-            image = image.filter(ImageFilter.UnsharpMask(radius=1.5, percent=120, threshold=3))
+            # Step 1: Subtle sharpening
+            image = image.filter(ImageFilter.UnsharpMask(radius=1.0, percent=120, threshold=3))
             
-            # Step 2: Noise reduction
-            image = image.filter(ImageFilter.MedianFilter(size=3))
-            
-            # Step 3: Aggressive sharpening for details
-            image = image.filter(ImageFilter.UnsharpMask(radius=2.5, percent=180, threshold=2))
+            # Step 2: Enhance sharpness moderately
+            enhancer = ImageEnhance.Sharpness(image)
+            image = enhancer.enhance(1.5)
             
             # Step 3: Enhance sharpness
             enhancer = ImageEnhance.Sharpness(image)
