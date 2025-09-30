@@ -4,6 +4,8 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageEnhance, ImageFilter
 import io
+from threading import Thread
+from flask import Flask
 
 # Configure logging
 logging.basicConfig(
@@ -12,8 +14,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Your bot token from BotFather
-BOT_TOKEN = 'YOUR_BOT_TOKEN_HERE'
+# Get bot token from environment variable
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8062451425:AAGsUTfhpKB4HWwkLcb_J_jlcLnXp8F8t3o')
 
 class ImageEnhancer:
     """Handles image enhancement operations"""
@@ -189,8 +191,29 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Log errors caused by updates."""
     logger.error(f"Update {update} caused error {context.error}")
 
+# Flask app for web service
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "🤖 Telegram Image Enhancer Bot is running!"
+
+@app.route('/health')
+def health():
+    return "OK", 200
+
+def run_flask():
+    """Run Flask app in a separate thread"""
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
+
 def main():
     """Start the bot."""
+    # Start Flask in background thread
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
     # Create application
     application = Application.builder().token(BOT_TOKEN).build()
     
